@@ -1,14 +1,5 @@
-terraform {
-  required_providers {
-    google = {
-      source  = "hashicorp/google"
-      version = "~> 4.0"
-    }
-  }
-}
-
-provider "google" {
-  project = var.gcp_project_id
-  region  = var.gcp_region
-  # Las credenciales se cargan desde la variable de entorno GOOGLE_APPLICATION_CREDENTIALS
-}
+# This file is kept for compatibility but provider configuration 
+# has been moved to main.tf for better organization in the modular structure.
+# 
+# Provider configuration is centralized in main.tf along with 
+# terraform requirements and module declarations.
