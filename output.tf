@@ -59,10 +59,7 @@ output "cluster_location" {
 }
 
 # Service Account Outputs
-output "gke_service_account_email" {
-  description = "The email of the GKE service account"
-  value       = google_service_account.gke_service_account.email
-}
+# Note: Service accounts are managed by the cluster module
 
 # Connection Command
 output "kubectl_connection_command" {
