@@ -1,0 +1,18 @@
+controller:
+  admin:
+    username: admin
+    # La contraseña será inyectada por Terraform
+    # password: ${var.jenkins_admin_password}
+  serviceType: LoadBalancer
+  JCasC:
+    configScripts:
+      welcome-message: |
+        jenkins:
+          systemMessage: "Jenkins configurado con Terraform y JCasC. ¡Bienvenido!"
+persistence:
+  storageClass: "standard"
+  size: 8Gi
+agent:
+  enabled: true
+  image: "jenkins/inbound-agent"
+  tag: "latest"

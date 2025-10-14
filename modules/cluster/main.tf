@@ -69,4 +69,8 @@ resource "google_container_cluster" "primary" {
       disabled = false
     }
   }
+
+  # Enable protection against accidental cluster deletion.
+  # This will be temporarily disabled to allow the cluster to be recreated.
+  deletion_protection = false
 }

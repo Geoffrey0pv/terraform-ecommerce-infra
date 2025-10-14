@@ -1,6 +1,7 @@
 variable "project_id" {
   description = "The Google Cloud project ID where resources will be created."
   type        = string
+  default     = "ecommerce-backend-1760307199"
 }
 
 variable "region" {
@@ -18,44 +19,60 @@ variable "node_locations" {
 variable "repo_name" {
   description = "Name of the repository or project."
   type        = string
-  default     = "name"
+  default     = "ecommerce-devops"
 }
 
 variable "repo_description" {
   description = "Description for the repository or project."
   type        = string
-  default     = "desc"
+  default     = "Infrastructure for ecommerce DevOps platform"
 }
 
 variable "node_pools" {
   description = "Map of node pool names to the number of nodes in each pool."
   type        = map(number)
-  default     = { testing = 1 }
+  default     = {
+    database-pool    = 1
+    elk-pool        = 1
+    monitoring-pool = 1
+    security-pool   = 1
+  }
 }
 
 variable "namespaces" {
   description = "List of Kubernetes namespaces to be created in the cluster."
   type        = list(string)
-  default     = ["testing"]
-}
-
-variable "credentials_file" {
-  description = "Path to the service account credentials JSON file."
-  type        = string
-  default     = "terraform-key.json"
+  default     = [
+    "development",
+    "staging",
+    "production",
+    "monitoring",
+    "security",
+    "ingress-nginx"
+  ]
 }
 
 variable "subnet_cidr" {
   description = "CIDR block for the VPC subnet."
   type        = string
+  default     = "10.20.0.0/20"
 }
 
 variable "pods_cidr" {
   description = "CIDR block for the Kubernetes pods network."
   type        = string
+  default     = "10.21.0.0/16"
 }
 
 variable "services_cidr" {
   description = "CIDR block for the Kubernetes services network."
   type        = string
+  default     = "10.22.0.0/20"
+}
+
+variable "jenkins_admin_password" {
+  description = "Contraseña para el usuario admin de Jenkins. Debe ser segura."
+  type        = string
+  sensitive   = true
+  default     = "DevOps2025!SuperSecure"
 }

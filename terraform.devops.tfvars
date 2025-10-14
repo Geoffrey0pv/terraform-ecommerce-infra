@@ -19,5 +19,10 @@ namespaces = [
   "security",
   "elk", 
   "database",
-  "monitoring"
+  "monitoring",
+  "tools",
+  "ingress-nginx"
 ]
+
+# Contraseña para Jenkins (sensible, no la subas a git en un proyecto real)
+jenkins_admin_password = "MiPasswordSeguroParaJenkins2025!"

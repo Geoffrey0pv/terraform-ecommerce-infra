@@ -21,8 +21,8 @@ output "cluster_ca" {
 }
 
 output "stable_gke_version" {
-  description = "The default STABLE channel GKE version"
-  value       = data.google_container_engine_versions.gke_version.release_channel_default_version["STABLE"]
+  description = "The actual GKE version used by the cluster"
+  value       = google_container_cluster.primary.master_version
 }
 
 output "cluster_id" {

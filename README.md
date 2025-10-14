@@ -62,13 +62,6 @@ taller2/
 - **Troubleshooting**: Identificación rápida del entorno por rango IP
 - **Peering**: Permite conectividad selectiva entre entornos cuando sea necesario
 
-#### 4. Estructura de Archivos en Root
-**Justificación**: Mover archivos de terraform/ a la raíz del proyecto mejora:
-- **Usabilidad**: Comandos terraform ejecutados directamente desde el directorio principal
-- **Simplicidad**: Menos navegación entre directorios durante el desarrollo
-- **Estándares**: Sigue convenciones de la comunidad Terraform
-- **CI/CD**: Facilita la integración con pipelines automatizados
-
 ## Arquitectura
 
 ### Componentes de Infraestructura
