@@ -9,10 +9,6 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.20"
     }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.9"
-    }
   }
 }
 
@@ -28,24 +24,10 @@ data "google_container_cluster" "primary" {
   depends_on = [module.cluster]
 }
 
-# Provider para Kubernetes - Se autentica usando la información del cluster GKE
+# Provider para Kubernetes - Se autentica usando kubeconfig
 provider "kubernetes" {
-  host                   = "https://${data.google_container_cluster.primary.endpoint}"
-  cluster_ca_certificate = base64decode(data.google_container_cluster.primary.master_auth[0].cluster_ca_certificate)
-  token                  = data.google_client_config.default.access_token
+  config_path = "~/.kube/config"
 }
-
-# Provider para Helm - Usa la configuración del provider de Kubernetes
-provider "helm" {
-  kubernetes {
-    host                   = data.google_container_cluster.primary.endpoint
-    cluster_ca_certificate = base64decode(data.google_container_cluster.primary.master_auth[0].cluster_ca_certificate)
-    token                  = data.google_client_config.default.access_token
-  }
-}
-
-# Data source para obtener el token de autenticación de gcloud
-data "google_client_config" "default" {}
 
 # Networking Module
 module "networking" {
@@ -103,22 +85,4 @@ module "namespaces" {
   namespaces = var.namespaces
 
   depends_on = [module.node_pools]
-}
-
-# ------------------------------------------------------------------------------
-# PLATFORM APPLICATIONS (HELM)
-# ------------------------------------------------------------------------------
-
-module "platform_apps" {
-  source = "./modules/platform_apps"
-
-  # Variables para Jenkins
-  jenkins_admin_password = var.jenkins_admin_password
-  jenkins_namespace      = "tools" # Desplegamos en el namespace 'tools'
-
-  # Variables para NGINX Ingress
-  ingress_namespace = "ingress-nginx"
-
-  # Asegurarnos de que los namespaces existan antes de desplegar
-  namespace_dependency = module.namespaces.namespace_names
 }

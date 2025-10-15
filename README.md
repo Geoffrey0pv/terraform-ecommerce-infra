@@ -1,855 +1,516 @@
-# E-commerce Infrastructure with Terraform and GKE
+# Infraestructura de E-commerce con GKE y Terraform
 
-Este proyecto implementa una infraestructura completa para Kubernetes en Google Cloud Platform utilizando Terraform, con una arquitectura modular y soporte para múltiples entornos (devops, staging, production).
+## Resumen Ejecutivo
 
-## Estructura del Proyecto
+Esta infraestructura implementa una plataforma de e-commerce completa utilizando Google Kubernetes Engine (GKE) con Terraform como Infrastructure as Code. La arquitectura está diseñada para soportar múltiples ambientes (devops, staging, production) con alta disponibilidad, seguridad y escalabilidad.
+
+## Arquitectura General
 
 ```
-taller2/
-├── README.md
-├── main.tf                     # Configuración principal de Terraform
-├── variables.tf                # Variables de configuración
-├── output.tf                   # Outputs de Terraform
-├── provider.tf                 # Configuración de providers
-├── terraform.devops.tfvars     # Variables para entorno devops
-├── terraform.staging.tfvars    # Variables para entorno staging
-├── terraform.prod.tfvars       # Variables para entorno production
-├── terraform-sa-key.json       # Service Account key (no versionar)
-├── .terraform.lock.hcl         # Lock file de Terraform
-├── manage-resources.sh         # Script de gestión de recursos
-├── modules/                    # Módulos reutilizables
-│   ├── networking/             # Red VPC y subnets
-│   ├── cluster/                # Cluster GKE
-│   ├── node_pools/             # Pools de nodos
-│   └── namespaces/             # Namespaces de Kubernetes
-├── environments/               # Archivos de configuración por entorno
-│   ├── devops/
-│   │   ├── .env                # Variables de entorno devops
-│   │   └── devops-sa-key.json  # Service Account devops
-│   ├── staging/
-│   │   ├── .env                # Variables de entorno staging
-│   │   └── staging-sa-key.json # Service Account staging
-│   └── prod/
-│       ├── .env                # Variables de entorno production
-│       └── prod-sa-key.json    # Service Account production
-├── scripts/                    # Scripts de utilidad
-├── ansible/                    # Configuración de automatización
-└── helm/                       # Charts de Helm para aplicaciones
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           GOOGLE CLOUD PLATFORM                                │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                           VPC NETWORK                                   │   │
+│  │  ┌─────────────────────────────────────────────────────────────────┐   │   │
+│  │  │                    SUBNET (10.x.0.0/20)                        │   │   │
+│  │  │                                                                 │   │   │
+│  │  │  ┌─────────────────────────────────────────────────────────┐   │   │   │
+│  │  │  │              GKE CLUSTER                               │   │   │   │
+│  │  │  │                                                         │   │   │   │
+│  │  │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐       │   │   │   │
+│  │  │  │  │   NODE     │ │   NODE     │ │   NODE     │       │   │   │   │
+│  │  │  │  │   POOL     │ │   POOL     │ │   POOL     │       │   │   │   │
+│  │  │  │  │            │ │            │ │            │       │   │   │   │
+│  │  │  │  │ ┌─────────┐│ │ ┌─────────┐│ │ ┌─────────┐│       │   │   │   │
+│  │  │  │  │ │  PODS   ││ │ │  PODS   ││ │ │  PODS   ││       │   │   │   │
+│  │  │  │  │ │         ││ │ │         ││ │ │         ││       │   │   │   │
+│  │  │  │  │ └─────────┘│ │ └─────────┘│ │ └─────────┘│       │   │   │   │
+│  │  │  │  └─────────────┘ └─────────────┘ └─────────────┘       │   │   │   │
+│  │  │  └─────────────────────────────────────────────────────────┘   │   │   │
+│  │  └─────────────────────────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                        NAT GATEWAY                                     │   │
+│  │                    (Internet Access)                                   │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │                      CLOUD ROUTER                                      │   │
+│  │                    (Network Routing)                                   │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Justificación del Enfoque Arquitectónico
-
-### Decisiones de Diseño y Beneficios
-
-#### 1. Arquitectura Modular
-**Justificación**: La separación en módulos independientes (networking, cluster, node_pools, namespaces) permite:
-- **Reutilización**: Los mismos módulos pueden ser utilizados en diferentes entornos sin duplicación de código
-- **Mantenimiento**: Cambios en un módulo no afectan otros componentes, reduciendo el riesgo de errores
-- **Testing**: Cada módulo puede ser probado independientemente
-- **Escalabilidad**: Nuevos módulos pueden ser agregados sin modificar la estructura existente
-
-#### 2. Configuración Multi-Entorno
-**Justificación**: El uso de archivos `.tfvars` separados por entorno proporciona:
-- **Aislamiento**: Cada entorno tiene configuraciones completamente independientes
-- **Seguridad**: Credenciales y configuraciones sensibles están separadas por entorno
-- **Flexibilidad**: Diferentes configuraciones de red, tamaños de nodos, y recursos por entorno
-- **Versionado**: Cada archivo puede ser versionado y auditado independientemente
-
-#### 3. Segregación de CIDR por Entorno
-**Justificación**: Rangos IP diferentes (devops: 10.20.x.x, staging: 10.10.x.x, prod: 10.100.x.x) garantizan:
-- **Aislamiento de Red**: Previene conflictos de IP entre entornos
-- **Seguridad**: Facilita la implementación de reglas de firewall específicas
-- **Troubleshooting**: Identificación rápida del entorno por rango IP
-- **Peering**: Permite conectividad selectiva entre entornos cuando sea necesario
-
-## Arquitectura
-
-### Componentes de Infraestructura
-
-Esta infraestructura implementa un diseño multi-entorno y modular que soporta entornos DevOps, Staging y Production con recursos y configuraciones dedicadas.
-
-#### Infraestructura Core
-- **Redes VPC**: Redes privadas virtuales dedicadas con subredes personalizadas para aislamiento de red
-- **Clusters GKE Modulares**: Clusters de Kubernetes específicos por entorno con configuraciones optimizadas
-- **Pools de Nodos Multi-Zona**: Pools de nodos configurables con autoescalado y taints específicos de workload
-- **Service Accounts**: Service accounts dedicadas con permisos de menor privilegio
-- **Servicios API**: Habilitación automática de APIs de Google Cloud requeridas
-- **Namespaces de Kubernetes**: Estructura organizada de namespaces para aislamiento de aplicaciones
-
-#### Arquitectura de Red
-- **Clusters Privados**: Clusters GKE privados listos para producción con endpoints privados configurables
-- **Rangos IP Secundarios**: Asignación IP optimizada para pods y servicios
-- **Soporte Multi-Regional**: Regiones y zonas configurables para alta disponibilidad
-- **Integración de Firewall**: Reglas de firewall automáticas administradas por GKE
-
-#### Características de Seguridad
-- **Workload Identity**: Autenticación segura de pod-a-servicio GCP
-- **Service Accounts Dedicadas**: Identidades específicas con permisos mínimos requeridos
-- **Redes Privadas**: Aislamiento de red con acceso controlado a internet
-
-## Configuración Multi-Entorno
-
-### Entornos Soportados
-
-| Entorno | CIDR Range | Propósito | Node Pool |
-|---------|------------|-----------|-----------|
-| **devops** | 10.20.0.0/20 | Desarrollo y testing | n1-standard-1 (1-3 nodos) |
-| **staging** | 10.10.0.0/20 | Pre-producción | n1-standard-1 (1-3 nodos) |
-| **prod** | 10.100.0.0/20 | Producción | n1-standard-1 (2-5 nodos) |
-
-### Variables por Entorno
-
-Cada entorno tiene su propio archivo `terraform.<env>.tfvars` con configuraciones específicas:
-
-```hcl
-# terraform.devops.tfvars
-project_id = "mi-proyecto-devops"
-region = "us-central1"
-node_locations = ["us-central1-a", "us-central1-b"]
-repo_name = "taller2-devops"
-vpc_cidr = "10.20.0.0/20"
-subnet_cidr = "10.20.1.0/24"
-secondary_ranges = {
-  pods = "10.20.16.0/20"
-  services = "10.20.32.0/20"
-}
-```
-
-## Gestión de Recursos y Costos
-
-### Script de Gestión Inteligente
-
-El script `manage-resources.sh` proporciona gestión eficiente de recursos:
-
-```bash
-# Ver estado actual de recursos
-./manage-resources.sh status devops
-
-# Pausar recursos (escalar nodos a 0) - Mantiene cluster, ahorra costos
-./manage-resources.sh pause devops
-
-# Reanudar recursos (restaura configuración original)
-./manage-resources.sh resume devops
-
-# Destruir completamente la infraestructura
-./manage-resources.sh destroy devops
-```
-
-### Estrategias de Gestión de Costos
-
-#### Opción 1: Pausa de Recursos (Recomendada para desarrollo)
-**Ventajas**:
-- Mantiene cluster y configuración de red
-- Escala node pools a 0 nodos (costo casi nulo)
-- Reanudación rápida (2-3 minutos)
-- Preserva estado de namespaces y configuraciones
-
-**Cuándo usar**: Durante desarrollo activo, testing intermitente
-
-#### Opción 2: Destroy/Apply Completo
-**Ventajas**:
-- Costo cero cuando está destruido
-- Limpieza completa de recursos
-- Ideal para entornos no utilizados por períodos largos
-
-**Desventajas**:
-- Tiempo de creación: 10-15 minutos
-- Requiere reconfiguración de kubectl
-- Pérdida de estado temporal
-
-#### Opción 3: Recursos Compartidos
-**Justificación**: Para organizaciones con múltiples proyectos:
-- Cluster compartido con namespaces separados
-- Reducción significativa de costos
-- Gestión centralizada de recursos
-
-## Comandos de Despliegue
-
-### Requisitos Previos
-
-1. **Google Cloud SDK** instalado y configurado
-2. **Terraform** >= 1.0 instalado
-3. **kubectl** instalado
-4. Credenciales de Service Account configuradas
-
-### Inicialización
-
-```bash
-# Inicializar Terraform
-terraform init
-
-# Validar configuración
-terraform validate
-```
-
-### Despliegue por Entorno
-
-#### DevOps Environment
-```bash
-# Planificar cambios
-terraform plan -var-file="terraform.devops.tfvars"
-
-# Aplicar cambios
-terraform apply -var-file="terraform.devops.tfvars"
-
-# Configurar kubectl
-gcloud container clusters get-credentials taller2-devops --region us-central1 --project mi-proyecto-devops
-```
-
-#### Staging Environment
-```bash
-# Planificar cambios
-terraform plan -var-file="terraform.staging.tfvars"
-
-# Aplicar cambios
-terraform apply -var-file="terraform.staging.tfvars"
-
-# Configurar kubectl
-gcloud container clusters get-credentials taller2-staging --region us-central1 --project mi-proyecto-staging
-```
-
-#### Production Environment
-```bash
-# Planificar cambios
-terraform plan -var-file="terraform.prod.tfvars"
-
-# Aplicar cambios
-terraform apply -var-file="terraform.prod.tfvars"
-
-# Configurar kubectl
-gcloud container clusters get-credentials taller2-prod --region us-central1 --project mi-proyecto-prod
-```
-
-### Verificación de Estado
-
-```bash
-# Ver clusters activos
-gcloud container clusters list
-
-# Ver node pools de un cluster
-gcloud container node-pools list --cluster=CLUSTER_NAME --region=REGION
-
-# Ver estado de Terraform
-terraform state list
-
-# Ver recursos de Kubernetes
-kubectl get nodes
-kubectl get namespaces
-```
-
-### Destrucción de Infraestructura
-
-```bash
-# Destruir entorno específico
-terraform destroy -var-file="terraform.<env>.tfvars"
-
-# O usar el script de gestión
-./manage-resources.sh destroy <env>
-```
-
-## Módulos
-
-### Networking Module (`modules/networking/`)
-- Crea VPC y subredes
-- Configura rangos IP secundarios
-- Establece reglas de firewall básicas
-
-### Cluster Module (`modules/cluster/`)
-- Despliega cluster GKE regional
-- Configura opciones de seguridad
-- Habilita APIs necesarias
-
-### Node Pools Module (`modules/node_pools/`)
-- Crea pools de nodos configurables
-- Implementa autoescalado
-- Configura taints y labels
-
-### Namespaces Module (`modules/namespaces/`)
-- Crea namespaces de Kubernetes
-- Configura resource quotas
-- Establece network policies
-
-## Configuración Avanzada
-
-### Service Accounts
-
-Cada entorno utiliza una service account dedicada:
-
-```bash
-# Crear service account
-gcloud iam service-accounts create terraform-sa-<env> \
-    --display-name="Terraform Service Account - <env>"
-
-# Asignar roles necesarios
-gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member="serviceAccount:terraform-sa-<env>@PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/container.admin"
-```
-
-### Variables de Entorno
-
-Configura las variables en `environments/<env>/.env`:
-
-```bash
-# environments/devops/.env
-GOOGLE_APPLICATION_CREDENTIALS=./environments/devops/devops-sa-key.json
-PROJECT_ID=mi-proyecto-devops
-REGION=us-central1
-```
-
-## Outputs Importantes
-
-El proyecto proporciona los siguientes outputs:
-
-- `cluster_name`: Nombre del cluster GKE
-- `cluster_endpoint`: Endpoint del cluster (sensible)
-- `network_name`: Nombre de la red VPC
-- `kubectl_connection_command`: Comando para conectar kubectl
+## Ambientes Configurados
+
+### 1. **DevOps Environment**
+- **Región**: us-central1-a
+- **Propósito**: Desarrollo, CI/CD y herramientas de DevOps
+- **Node Pools**: security, elk, database, monitoring
+- **Namespaces**: security, elk, database, monitoring, tools, ingress-nginx
+
+### 2. **Staging Environment**
+- **Región**: us-central1-b
+- **Propósito**: Pruebas y validación antes de producción
+- **Node Pools**: core, backend, database, monitoring
+- **Namespaces**: core, backend, database, monitoring
+
+### 3. **Production Environment**
+- **Región**: us-central1-c
+- **Propósito**: Ambiente de producción con alta disponibilidad
+- **Node Pools**: core (2), backend (4), database, monitoring
+- **Namespaces**: core, backend, database, monitoring
+
+## Configuración de Red
+
+### VPC y Subnets
+Cada ambiente tiene su propia VPC con la siguiente configuración:
+
+| Ambiente | Subnet CIDR | Pods CIDR | Services CIDR |
+|----------|-------------|-----------|---------------|
+| DevOps   | 10.20.0.0/20 | 10.21.0.0/16 | 10.22.0.0/20 |
+| Staging  | 10.10.0.0/20 | 10.11.0.0/16 | 10.12.0.0/20 |
+| Production | 10.100.0.0/20 | 10.101.0.0/16 | 10.102.0.0/20 |
+
+### Características de Red
+- **Private Cluster**: Nodos privados para mayor seguridad
+- **NAT Gateway**: Acceso a internet para nodos privados
+- **Secondary IP Ranges**: Separación de pods y servicios
+- **Firewall Rules**: Comunicación interna y SSH controlado
+
+## Namespaces y su Propósito
+
+### Namespaces por Ambiente
+
+#### **DevOps Environment**
+- **security**: Herramientas de seguridad (Falco, OPA, etc.)
+- **elk**: Stack ELK (Elasticsearch, Logstash, Kibana)
+- **database**: Bases de datos de desarrollo
+- **monitoring**: Prometheus, Grafana, AlertManager
+- **tools**: Jenkins, ArgoCD, herramientas de CI/CD
+- **ingress-nginx**: Controlador de ingress para routing
+
+#### **Staging Environment**
+- **core**: Aplicaciones core del e-commerce
+- **backend**: Servicios backend (APIs, microservicios)
+- **database**: Bases de datos de staging
+- **monitoring**: Monitoreo y observabilidad
+
+#### **Production Environment**
+- **core**: Aplicaciones core de producción
+- **backend**: Servicios backend de producción
+- **database**: Bases de datos de producción
+- **monitoring**: Monitoreo de producción
+
+## Node Pools y Especialización
+
+### Configuración de Node Pools
+
+| Node Pool | Propósito | Configuración | Uso |
+|-----------|-----------|---------------|-----|
+| **database-pool** | Bases de datos | n1-standard-1, 20GB SSD | PostgreSQL, MySQL, Redis |
+| **elk-pool** | Logging y Analytics | n1-standard-1, 20GB SSD | Elasticsearch, Logstash, Kibana |
+| **monitoring-pool** | Observabilidad | n1-standard-1, 20GB SSD | Prometheus, Grafana, AlertManager |
+| **security-pool** | Seguridad | n1-standard-1, 20GB SSD | Falco, OPA, Security scanners |
+| **core-pool** | Aplicaciones core | n1-standard-1, 20GB SSD | Frontend, API Gateway |
+| **backend-pool** | Microservicios | n1-standard-1, 20GB SSD | APIs, Business Logic |
+
+### Características de Seguridad
+- **Shielded Instances**: Secure Boot e Integrity Monitoring
+- **Workload Identity**: Integración con IAM de GCP
+- **Private Nodes**: Sin IPs públicas
+- **Network Policies**: Control de tráfico entre pods
+
+## Componentes de la Infraestructura
+
+### 1. **Módulo de Networking**
+- **VPC**: Red privada virtual
+- **Subnet**: Subred con rangos secundarios
+- **Firewall Rules**: Reglas de seguridad
+- **Cloud Router**: Enrutamiento de red
+- **NAT Gateway**: Acceso a internet
+
+### 2. **Módulo de Cluster**
+- **GKE Cluster**: Cluster de Kubernetes
+- **Private Cluster**: Configuración de seguridad
+- **Workload Identity**: Autenticación con GCP
+- **Network Policy**: Políticas de red
+- **Addons**: HTTP Load Balancing, HPA, Network Policy
+
+### 3. **Módulo de Node Pools**
+- **Node Pools Especializados**: Por función y ambiente
+- **Auto Repair**: Reparación automática de nodos
+- **Labels**: Etiquetado para organización
+- **Taints/Tolerations**: Aislamiento de workloads
+
+### 4. **Módulo de Namespaces**
+- **Namespaces**: Separación lógica de recursos
+- **RBAC**: Control de acceso basado en roles
+- **Resource Quotas**: Límites de recursos
+
+## Monitoreo y Observabilidad
+
+### Stack de Monitoreo
+- **Prometheus**: Métricas y alertas
+- **Grafana**: Dashboards y visualización
+- **AlertManager**: Gestión de alertas
+- **ELK Stack**: Logging centralizado
+  - **Elasticsearch**: Almacenamiento de logs
+  - **Logstash**: Procesamiento de logs
+  - **Kibana**: Visualización de logs
+
+### Métricas Clave
+- **Cluster Health**: Estado del cluster
+- **Node Metrics**: CPU, memoria, disco
+- **Pod Metrics**: Recursos por pod
+- **Application Metrics**: Métricas de aplicación
+- **Network Metrics**: Tráfico de red
 
 ## Seguridad
 
-### Mejores Prácticas Implementadas
+### Medidas de Seguridad Implementadas
+- **Private Cluster**: Nodos sin IPs públicas
+- **Network Policies**: Control de tráfico entre pods
+- **Workload Identity**: Autenticación segura con GCP
+- **Shielded Instances**: Protección a nivel de VM
+- **RBAC**: Control de acceso granular
+- **Resource Quotas**: Límites de recursos por namespace
 
-1. **Principio de Menor Privilegio**: Service accounts con permisos mínimos
-2. **Redes Privadas**: Clusters sin IPs públicas en nodos
-3. **Workload Identity**: Autenticación segura para workloads
-4. **Cifrado**: Cifrado en tránsito y en reposo habilitado
-5. **Auditoría**: Logs de auditoría habilitados
+### Herramientas de Seguridad
+- **Falco**: Detección de amenazas en tiempo real
+- **OPA (Open Policy Agent)**: Políticas de seguridad
+- **Network Security**: Firewall rules y network policies
+- **Image Security**: Escaneo de vulnerabilidades
 
-### Archivos Sensibles
+## CI/CD y DevOps
 
-Asegúrate de no versionar:
-- `terraform-sa-key.json`
-- `environments/*/\*-sa-key.json`
-- `terraform.tfstate`
-- `.env` files
+### Herramientas de DevOps
+- **Jenkins**: Automatización de CI/CD
+- **ArgoCD**: GitOps para deployment
+- **Helm**: Gestión de paquetes de Kubernetes
+- **Terraform**: Infrastructure as Code
 
-## Troubleshooting
+### Flujo de CI/CD
+1. **Desarrollo**: Código en repositorio Git
+2. **Build**: Jenkins construye y testea
+3. **Package**: Creación de imágenes Docker
+4. **Deploy**: ArgoCD despliega en ambientes
+5. **Monitor**: Prometheus y Grafana monitorean
 
-### Problemas Comunes
+## Escalabilidad y Alta Disponibilidad
 
-1. **Error de permisos**: Verificar roles de service account
-2. **Fallo en creación de nodos**: Verificar quotas de GCP
-3. **Problemas de red**: Revisar configuración de firewall
-4. **kubectl no conecta**: Verificar configuración de cluster
+### Estrategias de Escalabilidad
+- **Horizontal Pod Autoscaler (HPA)**: Escalado automático de pods
+- **Cluster Autoscaler**: Escalado automático de nodos
+- **Load Balancing**: Distribución de carga
+- **Multi-Zone**: Distribución en múltiples zonas
 
-### Comandos Útiles
+### Alta Disponibilidad
+- **Multi-Zone Deployment**: Distribución en zonas
+- **Health Checks**: Verificación de salud
+- **Rolling Updates**: Actualizaciones sin downtime
+- **Backup Strategy**: Estrategia de respaldos
 
+## Análisis de la Infraestructura
+
+### Fortalezas
+- **Arquitectura Modular**: Separación clara de responsabilidades
+- **Multi-Environment**: Soporte para múltiples ambientes
+- **Seguridad**: Implementación de mejores prácticas
+- **Observabilidad**: Stack completo de monitoreo
+- **Escalabilidad**: Diseño para crecimiento
+- **Infrastructure as Code**: Gestión versionada
+
+### Áreas de Mejora
+
+#### Componentes Faltantes
+1. **Service Mesh**: Istio o Linkerd para comunicación entre servicios
+2. **API Gateway**: Kong, Ambassador o Istio Gateway
+3. **Message Queue**: RabbitMQ, Apache Kafka o Google Pub/Sub
+4. **Cache Layer**: Redis Cluster para caching
+5. **CDN**: Google Cloud CDN para contenido estático
+6. **Backup Solution**: Velero para backup de Kubernetes
+7. **Secrets Management**: HashiCorp Vault o Google Secret Manager
+8. **Image Registry**: Google Container Registry o Artifact Registry
+
+#### Mejoras Arquitectónicas
+1. **Multi-Region**: Distribución en múltiples regiones
+2. **Disaster Recovery**: Plan de recuperación ante desastres
+3. **Blue-Green Deployment**: Estrategia de deployment
+4. **Canary Releases**: Implementación gradual
+5. **Chaos Engineering**: Pruebas de resistencia
+
+#### Seguridad Adicional
+1. **Pod Security Standards**: Políticas de seguridad de pods
+2. **Network Segmentation**: Micro-segmentación de red
+3. **Encryption**: Cifrado en tránsito y en reposo
+4. **Compliance**: Cumplimiento de estándares (SOC2, PCI-DSS)
+5. **Vulnerability Scanning**: Escaneo continuo de vulnerabilidades
+
+## Decisiones Arquitectónicas Justificadas
+
+### 1. **Private Cluster**
+**Decisión**: Nodos privados sin IPs públicas
+**Justificación**: Mayor seguridad, control de acceso, cumplimiento de políticas
+
+### 2. **Node Pools Especializados**
+**Decisión**: Pools separados por función
+**Justificación**: Optimización de recursos, aislamiento, escalabilidad independiente
+
+### 3. **Multi-Environment**
+**Decisión**: Ambientes separados (devops, staging, prod)
+**Justificación**: Aislamiento, testing, deployment pipeline
+
+### 4. **Workload Identity**
+**Decisión**: Integración con IAM de GCP
+**Justificación**: Seguridad, gestión de permisos, eliminación de service accounts
+
+### 5. **Network Policies**
+**Decisión**: Control de tráfico entre pods
+**Justificación**: Seguridad, micro-segmentación, compliance
+
+## Próximos Pasos Recomendados
+
+### Fase 1: Completar Stack Básico
+1. Implementar Service Mesh (Istio)
+2. Agregar API Gateway
+3. Configurar Message Queue
+4. Implementar Cache Layer
+
+### Fase 2: Mejoras de Seguridad
+1. Implementar Pod Security Standards
+2. Configurar Network Segmentation
+3. Agregar Vulnerability Scanning
+4. Implementar Secrets Management
+
+### Fase 3: Optimización y Escalabilidad
+1. Configurar Multi-Region
+2. Implementar Disaster Recovery
+3. Agregar Chaos Engineering
+4. Optimizar Costos
+
+## Scripts de Automatización
+
+### Scripts Disponibles
+
+#### 1. Script de Monitoreo (`scripts/monitor-all.sh`)
 ```bash
-# Verificar estado de recursos
-terraform state list
+# Ejecutar monitoreo completo
+./scripts/monitor-all.sh
 
-# Ver configuración actual
-terraform show
-
-# Verificar conectividad kubectl
-kubectl cluster-info
-
-# Ver nodos del cluster
-kubectl get nodes
-
-# Ver namespaces creados
-kubectl get namespaces
-
-# Verificar costos estimados
-./manage-resources.sh status <env>
+# El script verifica:
+# - Estado del cluster GKE
+# - Estado de los nodos
+# - Estado de los pods por namespace
+# - Estado de los servicios
+# - Métricas de recursos
+# - Conectividad de red
 ```
 
-## Comandos Importantes para Gestión de Recursos
-
-### Comandos de Google Cloud (gcloud)
-
-#### Gestión de Clusters
+#### 2. Script de Gestión de Infraestructura (`scripts/manage-infra.sh`)
 ```bash
-# Listar todos los clusters GKE
-gcloud container clusters list
-
-# Describir un cluster específico
-gcloud container clusters describe CLUSTER_NAME --region=REGION
-
-# Obtener credenciales para kubectl
-gcloud container clusters get-credentials CLUSTER_NAME --region=REGION --project=PROJECT_ID
-
-# Actualizar un cluster
-gcloud container clusters upgrade CLUSTER_NAME --region=REGION
-
-# Eliminar un cluster
-gcloud container clusters delete CLUSTER_NAME --region=REGION
-```
-
-#### Gestión de Node Pools
-```bash
-# Listar node pools de un cluster
-gcloud container node-pools list --cluster=CLUSTER_NAME --region=REGION
-
-# Describir un node pool específico
-gcloud container node-pools describe POOL_NAME --cluster=CLUSTER_NAME --region=REGION
-
-# Escalar un node pool (PAUSA/REANUDACIÓN)
-gcloud container clusters resize CLUSTER_NAME --node-pool=POOL_NAME --num-nodes=0 --region=REGION --quiet
-
-# Restaurar node pool
-gcloud container clusters resize CLUSTER_NAME --node-pool=POOL_NAME --num-nodes=CANTIDAD --region=REGION --quiet
-
-# Crear un nuevo node pool
-gcloud container node-pools create POOL_NAME --cluster=CLUSTER_NAME --region=REGION --machine-type=n1-standard-1 --num-nodes=1
-
-# Eliminar node pool
-gcloud container node-pools delete POOL_NAME --cluster=CLUSTER_NAME --region=REGION
-```
-
-#### Monitoreo de Recursos y Costos
-```bash
-# Ver uso de compute resources
-gcloud compute instances list
-
-# Ver discos persistentes
-gcloud compute disks list
-
-# Ver redes VPC
-gcloud compute networks list
-
-# Ver subnets
-gcloud compute networks subnets list
-
-# Ver reglas de firewall
-gcloud compute firewall-rules list
-
-# Ver quotas del proyecto
-gcloud compute project-info describe --project=PROJECT_ID
-
-# Ver facturación (requiere permisos de billing)
-gcloud billing budgets list --billing-account=BILLING_ACCOUNT_ID
-```
-
-#### Gestión de Service Accounts
-```bash
-# Listar service accounts
-gcloud iam service-accounts list
-
-# Crear service account
-gcloud iam service-accounts create SA_NAME --display-name="Display Name"
-
-# Asignar roles
-gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member="serviceAccount:SA_EMAIL" \
-    --role="roles/container.admin"
-
-# Crear y descargar key
-gcloud iam service-accounts keys create key.json --iam-account=SA_EMAIL
-```
-
-### Comandos de Terraform
-
-#### Operaciones Básicas
-```bash
-# Inicializar terraform
-terraform init
-
-# Validar configuración
-terraform validate
-
-# Formatear código
-terraform fmt
-
-# Planificar cambios
-terraform plan -var-file="terraform.ENV.tfvars"
-
-# Aplicar cambios
-terraform apply -var-file="terraform.ENV.tfvars"
+# Aplicar infraestructura
+./scripts/manage-infra.sh apply
 
 # Destruir infraestructura
-terraform destroy -var-file="terraform.ENV.tfvars"
+./scripts/manage-infra.sh destroy
+
+# Planificar cambios
+./scripts/manage-infra.sh plan
 ```
 
-#### Gestión de Estado
+#### 3. Script de Gestión de Recursos (`scripts/manage-resources.sh`)
 ```bash
-# Listar recursos en estado
-terraform state list
+# Crear recursos de Kubernetes
+./scripts/manage-resources.sh create
 
-# Mostrar detalles de un recurso
-terraform state show RESOURCE_NAME
+# Eliminar recursos de Kubernetes
+./scripts/manage-resources.sh delete
 
-# Importar recurso existente
-terraform import RESOURCE_NAME RESOURCE_ID
-
-# Remover recurso del estado (sin destruir)
-terraform state rm RESOURCE_NAME
-
-# Mover recurso en el estado
-terraform state mv OLD_NAME NEW_NAME
-
-# Mostrar configuración actual
-terraform show
-
-# Ver outputs
-terraform output
-
-# Ver output específico
-terraform output OUTPUT_NAME
+# Listar recursos
+./scripts/manage-resources.sh list
 ```
 
-#### Debugging
+#### 4. Script de Aplicación de Terraform (`scripts/apply_terraform.sh`)
 ```bash
-# Terraform con logs detallados
-TF_LOG=DEBUG terraform plan -var-file="terraform.ENV.tfvars"
+# Aplicar cambios de Terraform
+./scripts/apply_terraform.sh
 
-# Ver plan en formato JSON
-terraform plan -var-file="terraform.ENV.tfvars" -out=plan.tfplan
-terraform show -json plan.tfplan
-
-# Refrescar estado
-terraform refresh -var-file="terraform.ENV.tfvars"
+# Especificar ambiente
+./scripts/apply_terraform.sh devops
+./scripts/apply_terraform.sh staging
+./scripts/apply_terraform.sh production
 ```
 
-### Comandos de Kubernetes (kubectl)
-
-#### Información de Cluster
+#### 5. Script de Destrucción (`scripts/destroy_terraform.sh`)
 ```bash
-# Información del cluster
-kubectl cluster-info
+# Destruir infraestructura
+./scripts/destroy_terraform.sh
 
-# Ver versión
-kubectl version
-
-# Ver nodos y su estado
-kubectl get nodes -o wide
-
-# Describir un nodo
-kubectl describe node NODE_NAME
-
-# Ver uso de recursos de nodos
-kubectl top nodes
+# Especificar ambiente
+./scripts/destroy_terraform.sh devops
 ```
 
-#### Gestión de Namespaces
+### Script para Pausar Recursos (Nuevo)
 ```bash
-# Listar namespaces
-kubectl get namespaces
+# Crear script para pausar recursos y ahorrar costos
+./scripts/pause-resources.sh
 
-# Crear namespace
-kubectl create namespace NAMESPACE_NAME
-
-# Eliminar namespace
-kubectl delete namespace NAMESPACE_NAME
-
-# Cambiar contexto a namespace
-kubectl config set-context --current --namespace=NAMESPACE_NAME
+# Reanudar recursos
+./scripts/resume-resources.sh
 ```
 
-#### Monitoreo de Recursos
+## NAT Gateway y Cloud Router - Explicación Técnica
+
+### NAT Gateway
+**Propósito**: Permite que los nodos privados de GKE accedan a internet de forma segura.
+
+**Cómo funciona**:
+- Los nodos del cluster no tienen IPs públicas (private cluster)
+- El NAT Gateway actúa como intermediario entre los nodos privados e internet
+- Traduce las IPs privadas a una IP pública para salida a internet
+- Permite descargar imágenes de contenedores, actualizaciones, etc.
+
+**Beneficios**:
+- **Seguridad**: Los nodos no están expuestos directamente a internet
+- **Control**: Todo el tráfico saliente pasa por el NAT Gateway
+- **Logging**: Se pueden registrar las conexiones salientes
+- **Cumplimiento**: Cumple con políticas de seguridad corporativas
+
+### Cloud Router
+**Propósito**: Gestiona el enrutamiento de red y proporciona conectividad.
+
+**Funciones**:
+- **Enrutamiento**: Determina cómo se envían los paquetes entre redes
+- **NAT Gateway**: Proporciona la funcionalidad de NAT
+- **BGP**: Protocolo de enrutamiento para conectividad híbrida
+- **VPN**: Conectividad con redes on-premises
+
+**Configuración en tu infraestructura**:
+```hcl
+# Cloud Router para NAT Gateway
+resource "google_compute_router" "nat_router" {
+  name    = "${var.network_name}-nat-router"
+  region  = var.region
+  network = google_compute_network.vpc.id
+}
+
+# NAT Gateway para acceso a internet
+resource "google_compute_router_nat" "nat_gateway" {
+  name                               = "${var.network_name}-nat-gateway"
+  router                            = google_compute_router.nat_router.name
+  nat_ip_allocate_option            = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+```
+
+## KEDA - Kubernetes Event-Driven Autoscaling
+
+### ¿Qué es KEDA?
+KEDA (Kubernetes Event-Driven Autoscaling) es un componente que permite escalar aplicaciones basándose en eventos externos, no solo en métricas de CPU/memoria.
+
+### ¿Deberías implementar KEDA?
+
+**SÍ, te recomiendo implementar KEDA porque**:
+
+1. **Autoscaling Inteligente**: Escala basándose en colas de mensajes, métricas de base de datos, etc.
+2. **Pruebas de Rendimiento**: Perfecto para simular carga real en microservicios
+3. **Eficiencia de Recursos**: Escala a 0 cuando no hay trabajo
+4. **Múltiples Escaladores**: Soporta 50+ tipos de escaladores (Kafka, Redis, PostgreSQL, etc.)
+
+### Casos de Uso para tu E-commerce
+- **Colas de Pedidos**: Escalar procesadores de pedidos basándose en cola de mensajes
+- **Procesamiento de Pagos**: Escalar basándose en métricas de transacciones
+- **Análisis de Logs**: Escalar procesadores de logs basándose en volumen
+- **Pruebas de Carga**: Simular carga real para testing
+
+### Implementación Recomendada
+```yaml
+# Ejemplo de escalador para cola de pedidos
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: order-processor-scaler
+spec:
+  scaleTargetRef:
+    name: order-processor
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  triggers:
+  - type: rabbitmq
+    metadata:
+      queueName: orders
+      queueLength: '5'
+```
+
+## Comandos Útiles
+
+### Conexión al Cluster
 ```bash
-# Ver todos los recursos
-kubectl get all --all-namespaces
-
-# Ver pods en todos los namespaces
-kubectl get pods --all-namespaces -o wide
-
-# Ver uso de recursos de pods
-kubectl top pods --all-namespaces
-
-# Ver events del cluster
-kubectl get events --sort-by='.lastTimestamp'
-
-# Ver logs de un pod
-kubectl logs POD_NAME -n NAMESPACE_NAME
-
-# Ejecutar comando en pod
-kubectl exec -it POD_NAME -n NAMESPACE_NAME -- /bin/bash
+gcloud container clusters get-credentials ecommerce-devops-cluster --region us-central1 --project ecommerce-backend-1760307199
 ```
 
-#### Información de Configuración
+### Aplicar Terraform
 ```bash
-# Ver configuración actual de kubectl
-kubectl config view
+# DevOps
+terraform workspace select devops
+terraform apply -var-file="terraform.devops.tfvars"
 
-# Ver contextos disponibles
-kubectl config get-contexts
-
-# Cambiar contexto
-kubectl config use-context CONTEXT_NAME
-
-# Ver información del cluster actual
-kubectl config current-context
-```
-
-### Comandos del Script de Gestión (manage-resources.sh)
-
-#### Uso Básico
-```bash
-# Ver ayuda completa
-./manage-resources.sh help
-
-# Ver estado de recursos con costos estimados
-./manage-resources.sh status [devops|staging|prod]
-
-# Pausar recursos (escalar a 0 nodos)
-./manage-resources.sh pause [devops|staging|prod]
-
-# Reanudar recursos (restaurar configuración)
-./manage-resources.sh resume [devops|staging|prod]
-
-# Destruir infraestructura completa
-./manage-resources.sh destroy [devops|staging|prod]
-```
-
-### Script de Monitoreo Completo (monitor-all.sh)
-
-El script `monitor-all.sh` proporciona una vista completa de todos los recursos GCP y Kubernetes:
-
-```bash
-# Monitoreo completo de todos los recursos
-./monitor-all.sh
-
-# El script muestra:
-# - Clusters GKE y su estado
-# - Node pools detallados
-# - Instancias de Compute Engine
-# - Redes VPC y subnets
-# - Discos persistentes
-# - Service accounts
-# - Estado de Terraform
-# - Recursos de Kubernetes
-# - Estimación de costos
-# - Recomendaciones de optimización
-```
-
-#### Ejemplos Prácticos
-```bash
-# Workflow típico de desarrollo
-./manage-resources.sh status devops          # Ver estado actual
-./manage-resources.sh pause devops           # Pausar para ahorrar costos
-# ... trabajar en código ...
-./manage-resources.sh resume devops          # Reanudar para testing
-./manage-resources.sh status devops          # Verificar que esté funcionando
-
-# Cambio de entorno
-./manage-resources.sh pause devops           # Pausar entorno actual
-terraform apply -var-file="terraform.staging.tfvars"  # Desplegar nuevo entorno
-gcloud container clusters get-credentials ecommerce-staging-cluster --region us-central1
-./manage-resources.sh status staging         # Verificar nuevo entorno
-```
-
-## Estrategia Detallada de Gestión de Recursos
-
-### Filosofía de "Pausa Inteligente"
-
-Nuestra estrategia se basa en el principio de **"Infraestructura Efímera con Estado Persistente"**:
-
-#### 1. Componentes que se Mantienen (Persistentes)
-- **Cluster GKE**: El control plane se mantiene activo
-- **Redes VPC**: La infraestructura de red permanece
-- **Configuraciones**: Namespaces, RBAC, ConfigMaps
-- **Estado de Terraform**: Se preserva todo el estado
-
-#### 2. Componentes que se Escalan (Efímeros)
-- **Node Pools**: Se escalan a 0 nodos cuando no se usan
-- **Compute Instances**: Los nodos se terminan completamente
-- **Workloads**: Los pods se detienen automáticamente
-
-### Análisis de Costos por Estrategia
-
-#### Estrategia 1: Pausa (RECOMENDADA)
-```
-Cluster Control Plane: $0.10/hora = $2.40/día
-Node Pools (0 nodos): $0.00/hora = $0.00/día
-VPC/Networking: $0.01/día (prácticamente gratis)
-TOTAL PAUSADO: ~$2.41/día
-```
-
-**Tiempo de reanudación**: 2-3 minutos
-**Datos preservados**: 100%
-
-#### Estrategia 2: Destroy/Apply
-```
-Estado destruido: $0.00/día
-TOTAL DESTRUIDO: $0.00/día
-```
-
-**Tiempo de recreación**: 10-15 minutos
-**Datos preservados**: Solo Terraform state
-
-#### Estrategia 3: Running (Sin gestión)
-```
-Cluster Control Plane: $0.10/hora = $2.40/día
-Node Pools (1 nodo n1-standard-1): $0.0475/hora = $1.14/día
-VPC/Networking: $0.01/día
-TOTAL CORRIENDO: ~$3.55/día
-```
-
-### Flujos de Trabajo Optimizados
-
-#### Flujo de Desarrollo Diario
-```bash
-# Mañana - Iniciar trabajo
-./manage-resources.sh resume devops
-kubectl get nodes  # Verificar que esté listo
-
-# Durante el día - Desarrollo normal
-terraform plan -var-file="terraform.devops.tfvars"
-kubectl apply -f deployments/
-
-# Almuerzo - Pausa temporal
-./manage-resources.sh pause devops
-
-# Tarde - Continuar trabajo
-./manage-resources.sh resume devops
-
-# Fin del día - Pausa nocturna
-./manage-resources.sh pause devops
-```
-
-#### Flujo de Testing Multi-Entorno
-```bash
-# Testing en devops
-./manage-resources.sh status devops
-kubectl apply -f test-deployment.yaml
-
-# Cambio a staging para validación
-./manage-resources.sh pause devops
+# Staging
+terraform workspace select staging
 terraform apply -var-file="terraform.staging.tfvars"
-gcloud container clusters get-credentials ecommerce-staging-cluster --region us-central1
-kubectl apply -f test-deployment.yaml
 
-# Validación exitosa, preparar para prod
-./manage-resources.sh pause staging
+# Production
+terraform workspace select production
 terraform apply -var-file="terraform.prod.tfvars"
 ```
 
-### Monitoreo y Alertas
-
-#### Scripts de Monitoreo Automatizado
+### Monitoreo
 ```bash
-# Crear cron job para monitoreo diario
-echo "0 9 * * * cd /path/to/taller2 && ./manage-resources.sh status devops >> /var/log/gke-costs.log" | crontab -
+# Ver pods por namespace
+kubectl get pods --all-namespaces
 
-# Verificar recursos "olvidados" corriendo
-gcloud container clusters list --format="table(name,status,currentNodeCount,location)" | grep RUNNING
+# Ver servicios
+kubectl get services --all-namespaces
 
-# Calcular costos estimados mensuales
-./manage-resources.sh status devops | grep "Costo estimado" | awk '{print $5 * 30}'
+# Ver nodos
+kubectl get nodes
 ```
 
-### Mejores Prácticas de Gestión
-
-1. **Automatización**: Usar scripts para evitar errores manuales
-2. **Documentación**: Mantener log de cambios y estados
-3. **Verificación**: Siempre verificar estado antes de cambios críticos
-4. **Backup**: Guardar configuraciones importantes antes de destroy
-5. **Monitoreo**: Revisar costos y uso regularmente
-
-## Referencia Rápida de Comandos
-
-### Comandos Esenciales Diarios
-
+### Verificar Estado de la Arquitectura
 ```bash
-# MONITOREO Y ESTADO
-./monitor-all.sh                                    # Monitoreo completo de recursos
-./manage-resources.sh status devops                 # Estado específico de un entorno
-gcloud container clusters list                      # Ver todos los clusters
-kubectl get nodes -o wide                          # Ver nodos activos
+# Estado del cluster
+kubectl cluster-info
 
-# ⏸GESTIÓN DE COSTOS
-./manage-resources.sh pause devops                  # Pausar recursos (ahorra ~$3/día)
-./manage-resources.sh resume devops                 # Reanudar recursos (2-3 min)
-./manage-resources.sh destroy devops                # Destruir completamente
+# Estado de los nodos
+kubectl get nodes -o wide
 
-# DESPLIEGUE Y CAMBIOS
-terraform plan -var-file="terraform.devops.tfvars" # Planificar cambios
-terraform apply -var-file="terraform.devops.tfvars" # Aplicar cambios
-terraform state list                                # Ver recursos gestionados
+# Estado de los namespaces
+kubectl get namespaces
 
-# KUBERNETES
-kubectl config get-contexts                         # Ver contextos disponibles
-kubectl config use-context CONTEXT_NAME            # Cambiar contexto
-kubectl get all --all-namespaces                   # Ver todos los recursos K8s
+# Estado de los pods por namespace
+kubectl get pods --all-namespaces -o wide
+
+# Estado de los servicios
+kubectl get services --all-namespaces
+
+# Estado de los ingress
+kubectl get ingress --all-namespaces
+
+# Verificar recursos del cluster
+kubectl top nodes
+kubectl top pods --all-namespaces
 ```
 
-### Comandos de Emergencia y Troubleshooting
+## Contacto y Soporte
 
-```bash
-# PROBLEMAS DE CONEXIÓN
-gcloud auth list                                    # Verificar autenticación
-gcloud config set project PROJECT_ID               # Cambiar proyecto activo
-gcloud container clusters get-credentials CLUSTER --region REGION  # Reconfigurar kubectl
-
-# DEBUGGING
-TF_LOG=DEBUG terraform plan -var-file="terraform.devops.tfvars"  # Terraform verbose
-kubectl describe nodes                              # Detalles de nodos
-kubectl get events --sort-by='.lastTimestamp'      # Eventos recientes de K8s
-gcloud compute instances list --filter="status:RUNNING"  # Solo instancias corriendo
-
-# COSTOS Y LIMPIEZA
-gcloud compute instances list --format="value(name)" | grep gke | wc -l  # Contar nodos GKE
-terraform destroy -var-file="terraform.devops.tfvars" -auto-approve     # Destrucción rápida
-```
-
-### Flujos de Trabajo Comunes
-
-```bash
-# INICIO DEL DÍA
-./monitor-all.sh                                    # Ver estado general
-./manage-resources.sh resume devops                 # Activar entorno de trabajo
-kubectl get nodes                                   # Verificar que esté listo
-
-# CAMBIO DE ENTORNO
-./manage-resources.sh pause devops                  # Pausar entorno actual
-terraform apply -var-file="terraform.staging.tfvars"  # Desplegar nuevo entorno
-gcloud container clusters get-credentials ecommerce-staging-cluster --region us-central1
-kubectl config current-context                      # Verificar contexto
-
-# FIN DEL DÍA
-./manage-resources.sh pause devops                  # Pausar para ahorrar costos
-git add . && git commit -m "Daily changes" && git push  # Guardar cambios
-
-# LIMPIEZA SEMANAL
-./monitor-all.sh                                    # Revisar recursos activos
-terraform state list | wc -l                       # Contar recursos gestionados
-./manage-resources.sh destroy UNUSED_ENV           # Limpiar entornos no usados
-```
-
-### Comandos de Monitoreo Avanzado
-
-```bash
-# ANÁLISIS DE RECURSOS
-gcloud compute instances list --format="table(name,zone,machineType,status,creationTimestamp)"
-gcloud container node-pools list --cluster=CLUSTER --region=REGION --format="table(name,machineType,initialNodeCount,status)"
-kubectl top nodes                                   # Uso de CPU/Memoria por nodo
-kubectl top pods --all-namespaces                  # Uso de recursos por pods
-
-# ANÁLISIS DE COSTOS
-gcloud compute instances list --format="value(machineType)" | sort | uniq -c  # Tipos de máquinas en uso
-gcloud compute disks list --format="value(sizeGb)" | awk '{sum += $1} END {print "Total GB:", sum}'  # Almacenamiento total
-./manage-resources.sh status devops | grep "Costo estimado"  # Costo específico por entorno
-
-# SEGURIDAD Y PERMISOS
-gcloud iam service-accounts list                    # Ver service accounts
-gcloud projects get-iam-policy PROJECT_ID          # Ver permisos del proyecto
-kubectl auth can-i "*" "*" --all-namespaces        # Verificar permisos K8s
-```
-
-## Próximos Pasos
-
-1. **Monitoring**: Implementar Prometheus y Grafana
-2. **CI/CD**: Integrar con pipelines de despliegue
-3. **Backup**: Configurar respaldos automáticos
-4. **Scaling**: Implementar HPA y VPA
-5. **Security**: Agregar políticas de seguridad adicionales
-
-## Contribución
-
-Para contribuir al proyecto:
-
-1. Fork el repositorio
-2. Crea una rama feature (`git checkout -b feature/nueva-funcionalidad`)
-3. Commit tus cambios (`git commit -am 'Agregar nueva funcionalidad'`)
-4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
-5. Crea un Pull Request
-
-## Licencia
-
-Este proyecto está bajo la licencia MIT. Ver el archivo LICENSE para más detalles.
+Para preguntas sobre la infraestructura o mejoras, contactar al equipo de DevOps.
 
 ---
 
-**Nota**: Este es un proyecto de infraestructura crítica. Siempre ejecuta `terraform plan` antes de aplicar cambios en producción.
+**Última actualización**: Enero 2025
+**Versión**: 1.0
+**Mantenido por**: Equipo de DevOps

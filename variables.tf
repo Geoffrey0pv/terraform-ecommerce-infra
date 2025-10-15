@@ -48,7 +48,8 @@ variable "namespaces" {
     "production",
     "monitoring",
     "security",
-    "ingress-nginx"
+    "ingress-nginx",
+    "tools"
   ]
 }
 
@@ -68,11 +69,4 @@ variable "services_cidr" {
   description = "CIDR block for the Kubernetes services network."
   type        = string
   default     = "10.22.0.0/20"
-}
-
-variable "jenkins_admin_password" {
-  description = "Contraseña para el usuario admin de Jenkins. Debe ser segura."
-  type        = string
-  sensitive   = true
-  default     = "DevOps2025!SuperSecure"
 }
