@@ -29,9 +29,9 @@ resource "google_container_node_pool" "node_pools" {
     }
 
     preemptible  = false
-    disk_size_gb = 20
+    disk_size_gb = 30
     disk_type    = "pd-standard"
-    machine_type = "n1-standard-1"
+    machine_type = "e2-standard-2"  # 2 vCPU, 8GB RAM - más eficiente para Jenkins + microservicios
     tags         = ["gke-node", "${var.project_id}-gke", "gke-${each.key}-pool"]
     
     metadata = {

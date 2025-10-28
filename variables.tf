@@ -32,10 +32,7 @@ variable "node_pools" {
   description = "Map of node pool names to the number of nodes in each pool."
   type        = map(number)
   default     = {
-    database-pool    = 1
-    elk-pool        = 1
-    monitoring-pool = 1
-    security-pool   = 1
+    general-pool = 4  # Pool único optimizado para Jenkins + microservicios
   }
 }
 
@@ -43,13 +40,9 @@ variable "namespaces" {
   description = "List of Kubernetes namespaces to be created in the cluster."
   type        = list(string)
   default     = [
-    "development",
-    "staging",
-    "production",
-    "monitoring",
-    "security",
-    "ingress-nginx",
-    "tools"
+    "tools",       # CI/CD tools (Jenkins)
+    "staging",     # Staging environment
+    "production"   # Production environment
   ]
 }
 

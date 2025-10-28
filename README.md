@@ -1,345 +1,492 @@
-# Infraestructura de E-commerce con GKE y Terraform
+# E-commerce Infrastructure on Google Kubernetes Engine
 
-## Propósito y Justificación
+## Overview
 
-Esta infraestructura implementa una plataforma de e-commerce completa utilizando Google Kubernetes Engine (GKE) con Terraform como Infrastructure as Code. La arquitectura está diseñada para soportar múltiples ambientes (devops, staging, production) con alta disponibilidad, seguridad y escalabilidad.
+This repository contains Terraform configurations for deploying a production-ready e-commerce infrastructure on Google Kubernetes Engine (GKE). The infrastructure is optimized for cost-efficiency while maintaining scalability and high availability.
 
-### Justificación de la Arquitectura
+---
 
-**Por qué GKE**: Google Kubernetes Engine proporciona un servicio de Kubernetes completamente gestionado que elimina la complejidad de administrar el plano de control, permitiendo enfocarse en el desarrollo de aplicaciones.
+## Architecture Diagram
 
-**Por qué Terraform**: Infrastructure as Code permite versionar, reproducir y gestionar la infraestructura de manera consistente y automatizada, reduciendo errores humanos y facilitando la colaboración.
-
-**Por qué Multi-Environment**: La separación en ambientes (devops, staging, production) permite un flujo de desarrollo seguro con validación progresiva antes de llegar a producción.
-
-**Por qué Private Cluster**: Los nodos privados sin IPs públicas proporcionan mayor seguridad al eliminar la exposición directa a internet, requiriendo tráfico a través de NAT Gateway.
-
-## Arquitectura de la Infraestructura
-
-```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│                           GOOGLE CLOUD PLATFORM                                │
-├────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                           VPC NETWORK                                   │   │
-│  │  ┌─────────────────────────────────────────────────────────────────┐    │   │
-│  │  │                    SUBNET (10.x.0.0/20)                         │    │   │
-│  │  │                                                                 │    │   │
-│  │  │  ┌─────────────────────────────────────────────────────────┐    │    │   │
-│  │  │  │              GKE CLUSTER                                │    │    │   │
-│  │  │  │                                                         │    │    │   │
-│  │  │  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐        │    │    │   │
-│  │  │  │  │   NODE     │ │   NODE     │ │   NODE        |        │    │    │   │
-│  │  │  │  │   POOL     │ │   POOL     │ │   POOL        │        │    │    │   │
-│  │  │  │  │            │ │            │ │               │        │    │    │   │
-│  │  │  │  │ ┌─────────┐│ │ ┌─────────┐│ │ ┌─────────┐   │        │    │    │   │
-│  │  │  │  │ │  PODS   ││ │ │  PODS   ││ │ │  PODS   │   │        │    │    │   │
-│  │  │  │  │ │         ││ │ │         ││ │ │         │   │        │    │    │   │
-│  │  │  │  │ └─────────┘│ │ └─────────┘│ │ └─────────┘   │        │    │    │   │
-│  │  │  │  └─────────────┘ └─────────────┘ └─────────────┘        │    │    │   │
-│  │  │  └─────────────────────────────────────────────────────────┘    │    │   │
-│  │  └─────────────────────────────────────────────────────────────────┘    │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                        NAT GATEWAY                                      │   │
-│  │                    (Internet Access)                                    │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                │
-│  ┌─────────────────────────────────────────────────────────────────────────┐   │
-│  │                      CLOUD ROUTER                                       │   │
-│  │                    (Network Routing)                                    │   │
-│  └─────────────────────────────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph "Google Cloud Platform - Project: ecommerce-backend-1760307199"
+        subgraph "Region: us-central1"
+            subgraph "VPC Network: ecommerce-devops-vpc (10.20.0.0/20)"
+                NAT[Cloud NAT Gateway<br/>Router: ecommerce-devops-vpc-nat-router]
+                
+                subgraph "GKE Cluster: ecommerce-devops-cluster"
+                    subgraph "Node Pool: general-pool"
+                        NODE1[Node 1<br/>Machine Type: e2-standard-2<br/>vCPU: 2 | RAM: 8 GB<br/>Disk: 30 GB SSD]
+                        NODE2[Node 2<br/>Machine Type: e2-standard-2<br/>vCPU: 2 | RAM: 8 GB<br/>Disk: 30 GB SSD]
+                        NODE3[Node 3<br/>Machine Type: e2-standard-2<br/>vCPU: 2 | RAM: 8 GB<br/>Disk: 30 GB SSD]
+                        NODE4[Node 4<br/>Machine Type: e2-standard-2<br/>vCPU: 2 | RAM: 8 GB<br/>Disk: 30 GB SSD]
+                    end
+                    
+                    subgraph "Namespace: tools"
+                        JENKINS[Jenkins CI/CD]
+                    end
+                    
+                    subgraph "Namespace: staging"
+                        STAGING_APPS[Application Workloads]
+                    end
+                    
+                    subgraph "Namespace: production"
+                        PROD_APPS[Application Workloads]
+                    end
+                end
+            end
+        end
+    end
+    
+    INTERNET((Internet)) -->|Ingress Traffic| NAT
+    NAT --> NODE1
+    NAT --> NODE2
+    NAT --> NODE3
+    NAT --> NODE4
+    NODE1 -.Egress Traffic.-> NAT
+    NODE2 -.Egress Traffic.-> NAT
+    NODE3 -.Egress Traffic.-> NAT
+    NODE4 -.Egress Traffic.-> NAT
 ```
 
-## Componentes de la Infraestructura
+---
 
-### 1. Módulo de Networking
-- **VPC**: Red privada virtual que aísla los recursos
-- **Subnet**: Subred con rangos secundarios para pods y servicios de Kubernetes
-- **Firewall Rules**: Reglas de seguridad que controlan el tráfico de red
-- **Cloud Router**: Gestiona el enrutamiento de red y proporciona conectividad
-- **NAT Gateway**: Permite que los nodos privados accedan a internet de forma segura
+## Infrastructure Components
 
-### 2. Módulo de Cluster
-- **GKE Cluster**: Cluster de Kubernetes completamente gestionado
-- **Private Cluster**: Configuración de seguridad con nodos sin IPs públicas
-- **Workload Identity**: Integración con IAM de GCP para autenticación segura
-- **Network Policy**: Políticas de red para control de tráfico entre pods
-- **Addons**: HTTP Load Balancing, HPA, Network Policy habilitados
+### Google Cloud Project
+- **Project ID**: ecommerce-backend-1760307199
+- **Region**: us-central1
+- **Kubernetes Version**: 1.33.4-gke.1245000
 
-### 3. Módulo de Node Pools
-- **Node Pools Especializados**: Pools separados por función (database, elk, monitoring, security)
-- **Auto Repair**: Reparación automática de nodos para alta disponibilidad
-- **Labels**: Etiquetado para organización y selección de nodos
-- **Shielded Instances**: Protección a nivel de VM con Secure Boot
+### Networking
 
-### 4. Módulo de Namespaces
-- **Namespaces**: Separación lógica de recursos por ambiente y función
-- **RBAC**: Control de acceso basado en roles para seguridad granular
-- **Resource Quotas**: Límites de recursos por namespace para control de costos
+#### VPC Network
+- **Name**: ecommerce-devops-vpc
+- **Subnet CIDR**: 10.20.0.0/20 (4,096 IPs)
+- **Pod IP Range**: 10.21.0.0/16 (65,536 IPs)
+- **Service IP Range**: 10.22.0.0/20 (4,096 IPs)
 
-## Ambientes Configurados
+#### Cloud NAT
+- **Name**: ecommerce-devops-vpc-nat-gateway
+- **Router**: ecommerce-devops-vpc-nat-router
+- **Purpose**: Provides internet access for private cluster nodes
 
-### DevOps Environment
-- **Región**: us-central1-a
-- **Propósito**: Desarrollo, CI/CD y herramientas de DevOps
-- **Node Pools**: security, elk, database, monitoring
-- **Namespaces**: security, elk, database, monitoring, tools, ingress-nginx
+### GKE Cluster
 
-### Staging Environment
-- **Región**: us-central1-b
-- **Propósito**: Pruebas y validación antes de producción
-- **Node Pools**: core, backend, database, monitoring
-- **Namespaces**: core, backend, database, monitoring
+#### Cluster Configuration
+- **Name**: ecommerce-devops-cluster
+- **Type**: Regional
+- **Region**: us-central1
+- **Network**: ecommerce-devops-vpc
+- **Release Channel**: REGULAR
 
-### Production Environment
-- **Región**: us-central1-c
-- **Propósito**: Ambiente de producción con alta disponibilidad
-- **Node Pools**: core (2), backend (4), database, monitoring
-- **Namespaces**: core, backend, database, monitoring
+#### Node Pool: general-pool
+- **Node Count**: 4 nodes
+- **Machine Type**: e2-standard-2
+- **vCPU per Node**: 2 cores
+- **Memory per Node**: 8 GB
+- **Boot Disk**: 30 GB SSD per node
+- **Total Cluster Resources**:
+  - vCPU: 8 cores
+  - Memory: 32 GB
+  - Storage: 120 GB
 
-## Configuración de Red
+#### Node Configuration
+- **Image Type**: COS_CONTAINERD
+- **Auto-repair**: Enabled
+- **Auto-upgrade**: Enabled
+- **Service Account**: Custom Terraform service account
 
-### VPC y Subnets
-Cada ambiente tiene su propia VPC con la siguiente configuración:
+### Namespaces
 
-| Ambiente | Subnet CIDR | Pods CIDR | Services CIDR |
-|----------|-------------|-----------|---------------|
-| DevOps   | 10.20.0.0/20 | 10.21.0.0/16 | 10.22.0.0/20 |
-| Staging  | 10.10.0.0/20 | 10.11.0.0/16 | 10.12.0.0/20 |
-| Production | 10.100.0.0/20 | 10.101.0.0/16 | 10.102.0.0/20 |
+#### 1. tools
+- **Purpose**: CI/CD and DevOps tooling
+- **Managed by**: Terraform
 
-### Características de Red
-- **Private Cluster**: Nodos privados para mayor seguridad
-- **NAT Gateway**: Acceso a internet para nodos privados
-- **Secondary IP Ranges**: Separación de pods y servicios
-- **Firewall Rules**: Comunicación interna y SSH controlado
+#### 2. staging
+- **Purpose**: Development and testing environment
+- **Managed by**: Terraform
 
-## Node Pools y Especialización
+#### 3. production
+- **Purpose**: Production workloads
+- **Managed by**: Terraform
 
-### Configuración de Node Pools
+---
 
-| Node Pool | Propósito | Configuración | Uso |
-|-----------|-----------|---------------|-----|
-| **database-pool** | Bases de datos | n1-standard-1, 20GB SSD | PostgreSQL, MySQL, Redis |
-| **elk-pool** | Logging y Analytics | n1-standard-1, 20GB SSD | Elasticsearch, Logstash, Kibana |
-| **monitoring-pool** | Observabilidad | n1-standard-1, 20GB SSD | Prometheus, Grafana, AlertManager |
-| **security-pool** | Seguridad | n1-standard-1, 20GB SSD | Falco, OPA, Security scanners |
-| **core-pool** | Aplicaciones core | n1-standard-1, 20GB SSD | Frontend, API Gateway |
-| **backend-pool** | Microservicios | n1-standard-1, 20GB SSD | APIs, Business Logic |
+## Resource Specifications
 
-## Decisiones Arquitectónicas Justificadas
+### Compute Resources
 
-### 1. Private Cluster
-**Decisión**: Nodos privados sin IPs públicas
-**Justificación**: Mayor seguridad, control de acceso, cumplimiento de políticas de seguridad corporativas
+| Component | Type | Count | vCPU | Memory | Disk |
+|-----------|------|-------|------|--------|------|
+| GKE Nodes | e2-standard-2 | 4 | 2 cores | 8 GB | 30 GB SSD |
+| **Total** | - | **4** | **8 cores** | **32 GB** | **120 GB** |
 
-### 2. Node Pools Especializados
-**Decisión**: Pools separados por función
-**Justificación**: Optimización de recursos, aislamiento de workloads, escalabilidad independiente
+### Network Resources
 
-### 3. Multi-Environment
-**Decisión**: Ambientes separados (devops, staging, prod)
-**Justificación**: Aislamiento de recursos, testing seguro, pipeline de deployment
+| Component | CIDR/Range | Available IPs |
+|-----------|------------|---------------|
+| VPC Subnet | 10.20.0.0/20 | 4,096 |
+| Pod CIDR | 10.21.0.0/16 | 65,536 |
+| Service CIDR | 10.22.0.0/20 | 4,096 |
 
-### 4. Workload Identity
-**Decisión**: Integración con IAM de GCP
-**Justificación**: Seguridad mejorada, gestión centralizada de permisos, eliminación de service accounts
+### Quotas
 
-### 5. Network Policies
-**Decisión**: Control de tráfico entre pods
-**Justificación**: Micro-segmentación de red, cumplimiento de seguridad, aislamiento de servicios
+| Resource | Used | Limit | Available |
+|----------|------|-------|-----------|
+| IN_USE_ADDRESSES (us-central1) | 4 | 8 | 4 (50%) |
+| CPUS (us-central1) | 8 | Variable | - |
+| DISKS_TOTAL_GB (us-central1) | 120 | Variable | - |
 
-## Monitoreo y Observabilidad
+---
 
-### Stack de Monitoreo
-- **Prometheus**: Métricas y alertas del sistema
-- **Grafana**: Dashboards y visualización de métricas
-- **AlertManager**: Gestión y notificación de alertas
-- **ELK Stack**: Logging centralizado
-  - **Elasticsearch**: Almacenamiento de logs
-  - **Logstash**: Procesamiento de logs
-  - **Kibana**: Visualización de logs
+## Cost Estimate
 
-## Seguridad
+### Monthly Infrastructure Costs
 
-### Medidas de Seguridad Implementadas
-- **Private Cluster**: Nodos sin IPs públicas
-- **Network Policies**: Control de tráfico entre pods
-- **Workload Identity**: Autenticación segura con GCP
-- **Shielded Instances**: Protección a nivel de VM
-- **RBAC**: Control de acceso granular
-- **Resource Quotas**: Límites de recursos por namespace
+| Resource | Quantity | Unit Cost | Monthly Cost |
+|----------|----------|-----------|--------------|
+| e2-standard-2 nodes | 4 | ~$37.50 | ~$150.00 |
+| Cloud NAT Gateway | 1 | ~$15.00 | ~$15.00 |
+| Persistent Disks (SSD) | 120 GB | $0.17/GB | ~$20.00 |
+| Network Egress | Variable | $0.12/GB | ~$5-10.00 |
+| **Total** | - | - | **~$190/month** |
 
-## Escalabilidad y Alta Disponibilidad
+Note: Costs may vary based on actual usage and Google Cloud pricing changes.
 
-### Estrategias de Escalabilidad
-- **Horizontal Pod Autoscaler (HPA)**: Escalado automático de pods
-- **Cluster Autoscaler**: Escalado automático de nodos
-- **Load Balancing**: Distribución de carga
-- **Multi-Zone**: Distribución en múltiples zonas
+---
 
-### Alta Disponibilidad
-- **Multi-Zone Deployment**: Distribución en zonas
-- **Health Checks**: Verificación de salud
-- **Rolling Updates**: Actualizaciones sin downtime
-- **Auto Repair**: Reparación automática de nodos
+## Terraform Configuration
 
-## Scripts de Automatización
+### Directory Structure
 
-### Scripts Disponibles
-
-#### 1. Script de Monitoreo (`scripts/monitor-all.sh`)
-Verifica el estado completo de la infraestructura:
-- Estado del cluster GKE
-- Estado de los nodos
-- Estado de los pods por namespace
-- Estado de los servicios
-- Métricas de recursos
-- Conectividad de red
-
-#### 2. Script de Gestión de Infraestructura (`scripts/manage-infra.sh`)
-Gestiona la infraestructura de Terraform:
-- Aplicar cambios
-- Destruir infraestructura
-- Planificar cambios
-
-#### 3. Script de Gestión de Recursos (`scripts/manage-resources.sh`)
-Gestiona recursos de Kubernetes:
-- Crear recursos
-- Eliminar recursos
-- Listar recursos
-
-#### 4. Script de Aplicación de Terraform (`scripts/apply_terraform.sh`)
-Aplica cambios de Terraform por ambiente:
-- DevOps
-- Staging
-- Production
-
-#### 5. Script de Destrucción (`scripts/destroy_terraform.sh`)
-Destruye la infraestructura de forma controlada
-
-#### 6. Script de Pausa de Recursos (`scripts/pause-resources.sh`)
-Pausa recursos para ahorrar costos en desarrollo
-
-## Getting Started
-
-### Prerrequisitos
-- Terraform >= 1.0
-- Google Cloud SDK
-- kubectl
-- Acceso a proyecto de GCP
-
-### Desplegar Infraestructura
-
-1. **Configurar autenticación**:
-```bash
-gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
+```
+.
+├── main.tf                      # Main Terraform configuration
+├── provider.tf                  # GCP provider configuration
+├── variables.tf                 # Variable definitions
+├── output.tf                    # Output definitions
+├── terraform.tfvars.backup      # Variable values
+├── terraform-sa-key.json        # Service account credentials
+│
+├── modules/
+│   ├── cluster/                 # GKE cluster module
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── output.tf
+│   │
+│   ├── node_pools/              # Node pools module
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── output.tf
+│   │
+│   ├── networking/              # VPC and networking module
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── output.tf
+│   │
+│   └── namespaces/              # Kubernetes namespaces module
+│       ├── main.tf
+│       ├── variables.tf
+│       └── output.tf
+│
+└── scripts/
+    ├── apply_terraform.sh       # Apply infrastructure
+    ├── destroy_terraform.sh     # Destroy infrastructure
+    ├── pause-all.sh             # Scale down to 0 nodes
+    ├── resume-all.sh            # Scale up to 4 nodes
+    └── check-status.sh          # Check infrastructure status
 ```
 
-2. **Inicializar Terraform**:
+---
+
+## Deployment Guide
+
+### Prerequisites
+
+1. **Google Cloud SDK** installed and configured
+   ```bash
+   gcloud --version
+   ```
+
+2. **Terraform** installed (version >= 1.0)
+   ```bash
+   terraform --version
+   ```
+
+3. **kubectl** installed
+   ```bash
+   kubectl version --client
+   ```
+
+4. **Service Account Key** with required permissions:
+   - Kubernetes Engine Admin
+   - Compute Admin
+   - Service Account User
+
+### Step 1: Configure Service Account
+
+1. Create or use existing service account key (`terraform-sa-key.json`)
+2. Place the key in the project root directory
+3. Ensure the service account has the required IAM roles
+
+### Step 2: Configure Variables
+
+Edit `terraform.tfvars.backup` with your configuration:
+
+```hcl
+project_id = "ecommerce-backend-1760307199"
+region     = "us-central1"
+```
+
+### Step 3: Initialize Terraform
+
 ```bash
 terraform init
 ```
 
-3. **Seleccionar ambiente**:
+This will:
+- Download required providers (Google Cloud, Kubernetes)
+- Initialize the backend
+- Prepare modules
+
+### Step 4: Review Infrastructure Plan
+
 ```bash
-# Para DevOps
-terraform workspace select devops
-
-# Para Staging
-terraform workspace select staging
-
-# Para Production
-terraform workspace select production
+terraform plan -var-file="terraform.tfvars.backup"
 ```
 
-4. **Aplicar infraestructura**:
+Review the planned changes:
+- GKE cluster creation
+- VPC network and subnets
+- Node pool with 4 nodes
+- NAT gateway
+- Kubernetes namespaces
+
+### Step 5: Deploy Infrastructure
+
 ```bash
-# Usando script
+terraform apply -var-file="terraform.tfvars.backup"
+```
+
+Or use the provided script:
+
+```bash
 ./scripts/apply_terraform.sh
-
-# O manualmente
-terraform apply -var-file="terraform.devops.tfvars"
 ```
 
-5. **Conectar al cluster**:
+Deployment takes approximately 5-10 minutes.
+
+### Step 6: Verify Deployment
+
 ```bash
-gcloud container clusters get-credentials ecommerce-devops-cluster --region us-central1 --project YOUR_PROJECT_ID
+# Configure kubectl
+gcloud container clusters get-credentials ecommerce-devops-cluster --region=us-central1
+
+# Check nodes
+kubectl get nodes
+
+# Expected output:
+# NAME                                              STATUS   ROLES    AGE
+# gke-ecommerce-devops-general-pool-xxxxx-xxxx     Ready    <none>   5m
+# gke-ecommerce-devops-general-pool-xxxxx-xxxx     Ready    <none>   5m
+# gke-ecommerce-devops-general-pool-xxxxx-xxxx     Ready    <none>   5m
+# gke-ecommerce-devops-general-pool-xxxxx-xxxx     Ready    <none>   5m
+
+# Check namespaces
+kubectl get namespaces
+
+# Expected output:
+# NAME              STATUS   AGE
+# default           Active   5m
+# kube-system       Active   5m
+# kube-public       Active   5m
+# tools             Active   5m
+# staging           Active   5m
+# production        Active   5m
 ```
 
-6. **Verificar estado**:
+### Step 7: View Outputs
+
 ```bash
-./scripts/monitor-all.sh
+terraform output
 ```
 
-### Usar Scripts de Automatización
-
-#### Monitoreo
-```bash
-# Verificar estado completo
-./scripts/monitor-all.sh
-```
-
-#### Gestión de Infraestructura
-```bash
-# Aplicar cambios
-./scripts/manage-infra.sh apply
-
-# Destruir infraestructura
-./scripts/manage-infra.sh destroy
-
-# Planificar cambios
-./scripts/manage-infra.sh plan
-```
-
-#### Gestión de Recursos
-```bash
-# Crear recursos
-./scripts/manage-resources.sh create
-
-# Listar recursos
-./scripts/manage-resources.sh list
-
-# Eliminar recursos
-./scripts/manage-resources.sh delete
-```
-
-#### Pausar Recursos
-```bash
-# Pausar para ahorrar costos
-./scripts/pause-resources.sh
-
-# Reanudar recursos
-./scripts/resume-resources.sh
-```
-
-## Próximos Pasos Recomendados
-
-### Fase 1: Completar Stack Básico
-1. Implementar Service Mesh (Istio)
-2. Agregar API Gateway
-3. Configurar Message Queue
-4. Implementar Cache Layer
-
-### Fase 2: Mejoras de Seguridad
-1. Implementar Pod Security Standards
-2. Configurar Network Segmentation
-3. Agregar Vulnerability Scanning
-4. Implementar Secrets Management
-
-### Fase 3: Optimización y Escalabilidad
-1. Configurar Multi-Region
-2. Implementar Disaster Recovery
-3. Agregar Chaos Engineering
-4. Optimizar Costos
+Expected outputs:
+- Cluster name
+- Cluster endpoint
+- Cluster CA certificate
+- Available namespaces
 
 ---
 
-**Última actualización**: Enero 2025
-**Versión**: 1.0
-**Mantenido por**: Equipo de DevOps
+## Infrastructure Management
+
+### Scaling Operations
+
+#### Pause Infrastructure (Scale to 0 nodes)
+```bash
+./scripts/pause-all.sh
+```
+This reduces costs to approximately $45/month (only Load Balancers remain).
+
+#### Resume Infrastructure (Scale to 4 nodes)
+```bash
+./scripts/resume-all.sh
+```
+This restores the cluster to full operational capacity.
+
+#### Check Status
+```bash
+./scripts/check-status.sh
+```
+Shows current node count, pod status, and resource usage.
+
+### Updating Infrastructure
+
+```bash
+# 1. Modify Terraform files as needed
+# 2. Review changes
+terraform plan -var-file="terraform.tfvars.backup"
+
+# 3. Apply changes
+terraform apply -var-file="terraform.tfvars.backup"
+```
+
+### Destroying Infrastructure
+
+```bash
+terraform destroy -var-file="terraform.tfvars.backup"
+```
+
+Or use the script:
+
+```bash
+./scripts/destroy_terraform.sh
+```
+
+Warning: This permanently deletes all infrastructure resources.
+
+---
+
+## Application Deployment
+
+Application deployments are managed separately from infrastructure. See the `k8s-apps-v2` directory for:
+
+- Kubernetes manifests for microservices
+- Helm charts for platform components
+- Deployment scripts and automation
+
+Application deployment is intentionally decoupled from infrastructure provisioning to allow independent lifecycle management.
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+#### Issue: Quota Exceeded
+```
+Error: Error creating NodePool: googleapi: Error 403: Quota 'IN_USE_ADDRESSES' exceeded
+```
+
+**Solution**: 
+- Check current quota usage: `gcloud compute project-info describe --project=ecommerce-backend-1760307199`
+- Request quota increase in Google Cloud Console
+- Or reduce node count in `variables.tf`
+
+#### Issue: Authentication Failed
+```
+Error: google: could not find default credentials
+```
+
+**Solution**:
+```bash
+gcloud auth application-default login
+```
+
+#### Issue: kubectl Cannot Connect
+```
+Unable to connect to the server
+```
+
+**Solution**:
+```bash
+gcloud container clusters get-credentials ecommerce-devops-cluster --region=us-central1
+```
+
+### Useful Commands
+
+```bash
+# View cluster details
+gcloud container clusters describe ecommerce-devops-cluster --region=us-central1
+
+# View node pool details
+gcloud container node-pools describe general-pool \
+  --cluster=ecommerce-devops-cluster \
+  --region=us-central1
+
+# View current quota usage
+gcloud compute project-info describe --project=ecommerce-backend-1760307199
+
+# View Terraform state
+terraform show
+
+# List all resources
+terraform state list
+```
+
+---
+
+## Security Considerations
+
+- Service account key (`terraform-sa-key.json`) is not version controlled (.gitignore)
+- Node auto-upgrade enabled for security patches
+- Private cluster endpoints (controlled by NAT gateway)
+- Network policies should be implemented at application layer
+- Secrets should be managed using Kubernetes Secrets or Google Secret Manager
+
+---
+
+## Maintenance
+
+### Regular Tasks
+
+- **Weekly**: Review resource usage and costs in GCP Console
+- **Monthly**: Check for Terraform provider updates
+- **Quarterly**: Review and optimize resource allocation
+- **Annually**: Review security configurations and IAM policies
+
+### Terraform State Management
+
+- State is stored locally in `terraform.tfstate`
+- Backup files are created automatically (`terraform.tfstate.backup`)
+- Consider migrating to remote state (GCS bucket) for team environments
+
+---
+
+## Version Information
+
+- Terraform: >= 1.0
+- Google Provider: ~> 5.0
+- Kubernetes Provider: ~> 2.20
+- GKE Version: 1.33.4-gke.1245000
+
+---
+
+## Support and Documentation
+
+- [Terraform GCP Provider Documentation](https://registry.terraform.io/providers/hashicorp/google/latest/docs)
+- [GKE Documentation](https://cloud.google.com/kubernetes-engine/docs)
+- [Kubernetes Documentation](https://kubernetes.io/docs/)
+
+---
+
+## License
+
+This infrastructure code is proprietary and confidential.
+
+---
+
+Last Updated: October 2025
